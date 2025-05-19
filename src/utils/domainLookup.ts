@@ -66,7 +66,8 @@ export async function lookupDomain(domain: string): Promise<any> {
       tags: rdapResult.events ? getDomainAgeTags(rdapResult.events.length) : [],
     };
   }
-
+  console.log('whoisServers:', whoisServers);
+  console.log('tld:', tld, 'whoisServer:', whoisServer);
   console.log('Falling back to WHOIS query...');
   const whoisResult = await queryWHOIS(domain);
 
