@@ -39,7 +39,6 @@ export class WhoisApiService {
         const rdapResult = await this.tryRdapLookup();
         if (rdapResult) return rdapResult;
         
-        // 如果用户指定只使用RDAP，则不使用WHOIS
         console.log("用户选择仅使用RDAP，但RDAP查询失败");
         return this.createErrorResponse("RDAP查询失败，无法获取信息");
       } 
@@ -68,15 +67,10 @@ export class WhoisApiService {
         if (publicApiResult) return publicApiResult;
       }
       
-      // 尝试静态JSON数据
-      const staticResult = await this.tryStaticJsonData();
-      if (staticResult) return staticResult;
-      
-      // 尝试模拟数据作为最后的后备
-      console.log("所有查询方法均失败，返回模拟数据");
-      this.querySources.push('mock');
-      const mockResponse = getMockWhoisResponse(this.domain);
-      return mockResponse.data;
+      // 如果所有查询都失败，返回错误
+      console.log("所有查询方法均失败");
+      this.querySources.push('all-failed');
+      return this.createErrorResponse("无法获取域名信息，所有查询方法均失败");
     } catch (error) {
       console.error("WhoisApiService查询失败:", error);
       
@@ -92,9 +86,7 @@ export class WhoisApiService {
   private async tryLocalApis(): Promise<WhoisData | null> {
     const apiPaths = [
       '/api/whois',
-      '/api/direct-whois',
-      '/whois',
-      '/direct-whois'
+      '/api/direct-whois'
     ];
     
     for (const path of apiPaths) {
@@ -118,9 +110,9 @@ export class WhoisApiService {
           3000 // 最大延迟
         );
         
-        if (response.data && response.data.success && response.data.data) {
+        if (response.data && response.data.domain && response.data.domain === this.domain) {
           console.log(`本地API ${path} 查询成功`);
-          const apiData = response.data.data;
+          const apiData = response.data;
           
           // 确保protocol字段使用正确的联合类型
           const protocol = (apiData.protocol === 'rdap' || apiData.protocol === 'whois') 
@@ -157,77 +149,105 @@ export class WhoisApiService {
       this.querySources.push('rdap');
       console.log("尝试RDAP查询");
       
-      const endpoints: ApiEndpoint[] = [
-        {
-          url: `https://rdap.org/domain/${this.domain}`,
-          method: 'get',
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'Domain-Lookup-Tool/2.0'
-          },
-          process: (data: any) => {
-            return {
-              domain: this.domain,
-              whoisServer: "RDAP.org",
-              registrar: data.entities?.[0]?.name || "未知",
-              registrationDate: data.events?.find((e:any) => e.eventAction === "registration")?.eventDate || "未知",
-              expiryDate: data.events?.find((e:any) => e.eventAction === "expiration")?.eventDate || "未知",
-              nameServers: (data.nameservers || []).map((ns: any) => ns.ldhName),
-              registrant: "未知",
-              status: Array.isArray(data.status) ? data.status.join(', ') : data.status || "未知",
-              rawData: JSON.stringify(data, null, 2),
-              protocol: "rdap" as "rdap" | "whois" | "error",
-              message: "通过RDAP协议获取的数据"
-            };
-          }
-        },
-        {
-          url: `https://www.arin.net/resources/registry/whois/rdap/?query=${this.domain}`,
-          method: 'get',
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'Domain-Lookup-Tool/2.0'
-          },
-          process: (data: any) => {
-            return {
-              domain: this.domain,
-              whoisServer: "ARIN RDAP",
-              registrar: data.entities?.[0]?.name || "未知",
-              registrationDate: data.events?.find((e:any) => e.eventAction === "registration")?.eventDate || "未知",
-              expiryDate: data.events?.find((e:any) => e.eventAction === "expiration")?.eventDate || "未知",
-              nameServers: (data.nameservers || []).map((ns: any) => ns.ldhName),
-              registrant: "未知",
-              status: Array.isArray(data.status) ? data.status.join(', ') : data.status || "未知",
-              rawData: JSON.stringify(data, null, 2),
-              protocol: "rdap" as "rdap" | "whois" | "error",
-              message: "通过ARIN RDAP获取的数据"
-            };
-          }
-        }
-      ];
+      const tld = this.tld;
+      if (!tld) return null;
       
-      for (const endpoint of endpoints) {
+      // RDAP服务器映射
+      const rdapServers: Record<string, string> = {
+        'com': 'https://rdap.verisign.com/com/v1',
+        'net': 'https://rdap.verisign.com/net/v1',
+        'org': 'https://rdap.org',
+        'io': 'https://rdap.nic.io',
+        'ai': 'https://rdap.nic.ai'
+      };
+      
+      const servers = [
+        rdapServers[tld],
+        'https://rdap.org'
+      ].filter(Boolean);
+      
+      for (const baseServer of servers) {
         try {
-          const response = await retryRequest(() => {
-            if (endpoint.method === 'post') {
-              return axios.post(endpoint.url, endpoint.data || {}, {
-                timeout: 10000,
-                headers: endpoint.headers
-              });
-            } else {
-              return axios.get(endpoint.url, {
-                timeout: 10000,
-                headers: endpoint.headers
-              });
-            }
-          }, 2);
+          const rdapUrl = `${baseServer}${baseServer.endsWith('/') ? '' : '/'}domain/${this.domain}`;
+          console.log(`尝试RDAP服务器: ${rdapUrl}`);
           
-          if (response.data) {
-            console.log(`RDAP查询成功: ${endpoint.url}`);
-            return endpoint.process(response.data);
+          const response = await axios.get(rdapUrl, {
+            timeout: 8000,
+            headers: {
+              'Accept': 'application/rdap+json, application/json',
+              'User-Agent': 'Domain-Lookup-Tool/1.0'
+            }
+          });
+          
+          if (response.data && response.status === 200) {
+            console.log(`RDAP查询成功: ${baseServer}`);
+            
+            const rdapData = response.data;
+            let registrar = "未知";
+            let registrationDate = "未知";
+            let expiryDate = "未知";
+            let nameServers: string[] = [];
+            let status = "未知";
+            
+            // 解析注册商
+            if (rdapData.entities) {
+              for (const entity of rdapData.entities) {
+                if (entity.roles?.includes('registrar')) {
+                  if (entity.vcardArray?.[1]) {
+                    for (const vcard of entity.vcardArray[1]) {
+                      if (vcard[0] === 'fn') {
+                        registrar = vcard[3];
+                        break;
+                      }
+                    }
+                  }
+                  if (registrar === "未知" && entity.handle) {
+                    registrar = entity.handle;
+                  }
+                  break;
+                }
+              }
+            }
+            
+            // 解析日期
+            if (rdapData.events) {
+              for (const event of rdapData.events) {
+                if (event.eventAction === 'registration') {
+                  registrationDate = event.eventDate;
+                } else if (event.eventAction === 'expiration') {
+                  expiryDate = event.eventDate;
+                }
+              }
+            }
+            
+            // 解析DNS服务器
+            if (rdapData.nameservers) {
+              nameServers = rdapData.nameservers.map((ns: any) => 
+                ns.ldhName || ns.unicodeName || ''
+              ).filter(Boolean);
+            }
+            
+            // 解析状态
+            if (rdapData.status && Array.isArray(rdapData.status)) {
+              status = rdapData.status.join(', ');
+            }
+            
+            return {
+              domain: this.domain,
+              whoisServer: "RDAP协议",
+              registrar,
+              registrationDate,
+              expiryDate,
+              nameServers,
+              registrant: "未知",
+              status,
+              rawData: JSON.stringify(rdapData, null, 2),
+              protocol: "rdap" as "rdap" | "whois" | "error",
+              message: `通过RDAP协议成功获取数据 (${baseServer})`
+            };
           }
         } catch (error) {
-          console.error(`RDAP查询失败 ${endpoint.url}:`, error);
+          console.error(`RDAP服务器 ${baseServer} 查询失败:`, error);
         }
       }
     } catch (error) {
@@ -246,60 +266,21 @@ export class WhoisApiService {
     
     const endpoints: ApiEndpoint[] = [
       {
-        url: `https://api.who.cx/whois/${this.domain}`,
-        method: 'get',
-        process: (data: any) => {
-          return {
-            domain: this.domain,
-            whoisServer: data.whois_server || "未知",
-            registrar: data.registrar || "未知",
-            registrationDate: data.created || "未知",
-            expiryDate: data.expires || "未知",
-            nameServers: data.nameservers || [],
-            registrant: data.registrant || "未知",
-            status: data.status || "未知",
-            rawData: data.raw || `No raw data available for ${this.domain}`,
-            protocol: "whois" as "rdap" | "whois" | "error",
-            message: "通过who.cx API获取的数据"
-          };
-        }
-      },
-      {
         url: `https://api.whoapi.com/?domain=${this.domain}&r=whois&apikey=demo`,
         method: 'get',
         process: (data: any) => {
           return {
             domain: this.domain,
-            whoisServer: data.whois_server || "未知",
+            whoisServer: data.whois_server || "whoapi.com",
             registrar: data.registrar || "未知",
             registrationDate: data.date_created || "未知",
             expiryDate: data.date_expires || "未知", 
             nameServers: data.nameservers || [],
             registrant: data.owner || "未知",
             status: data.status || "未知",
-            rawData: data.whois_raw || `No raw data available for ${this.domain}`,
+            rawData: data.whois_raw || `从whoapi.com获取 ${this.domain} 的数据`,
             protocol: "whois" as "rdap" | "whois" | "error",
             message: "通过whoapi.com获取的数据"
-          };
-        }
-      },
-      {
-        url: `https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=at_demo&domainName=${this.domain}&outputFormat=JSON`,
-        method: 'get',
-        process: (data: any) => {
-          const whoisData = data.WhoisRecord || {};
-          return {
-            domain: this.domain,
-            whoisServer: whoisData.registrarWHOISServer || "未知",
-            registrar: whoisData.registrarName || "未知",
-            registrationDate: whoisData.createdDate || "未知",
-            expiryDate: whoisData.expiryDate || "未知",
-            nameServers: (whoisData.nameServers?.hostNames || []),
-            registrant: (whoisData.registrant?.organization || whoisData.registrant?.name) || "未知",
-            status: whoisData.status || "未知",
-            rawData: whoisData.rawText || `No raw data available for ${this.domain}`,
-            protocol: "whois" as "rdap" | "whois" | "error",
-            message: "通过whoisxmlapi.com获取的数据"
           };
         }
       }
@@ -308,69 +289,19 @@ export class WhoisApiService {
     for (const endpoint of endpoints) {
       try {
         const response = await retryRequest(() => {
-          if (endpoint.method === 'post') {
-            return axios.post(endpoint.url, endpoint.data || {}, {
-              timeout: 10000,
-              headers: endpoint.headers
-            });
-          } else {
-            return axios.get(endpoint.url, {
-              timeout: 10000,
-              headers: endpoint.headers
-            });
-          }
+          return axios.get(endpoint.url, {
+            timeout: 10000,
+            headers: endpoint.headers
+          });
         }, 2);
         
-        if (response.data) {
+        if (response.data && response.data.status === 1) {
           console.log(`公共API查询成功: ${endpoint.url}`);
           return endpoint.process(response.data);
         }
       } catch (error) {
         console.error(`公共API查询失败 ${endpoint.url}:`, error);
       }
-    }
-    
-    return null;
-  }
-  
-  /**
-   * 尝试获取静态JSON数据
-   */
-  private async tryStaticJsonData(): Promise<WhoisData | null> {
-    try {
-      this.querySources.push('static-json');
-      console.log("尝试从静态JSON数据获取域名信息");
-      
-      // 尝试从 /public/data/ 目录获取预定义数据
-      const staticDataUrl = `/data/domains/${this.domain}.json`;
-      
-      const response = await axios.get(staticDataUrl, {
-        timeout: 5000
-      });
-      
-      if (response.data) {
-        console.log("成功获取静态JSON数据");
-        
-        // 确保静态数据符合WhoisData接口
-        const staticData = response.data;
-        return {
-          domain: this.domain,
-          whoisServer: staticData.whoisServer || "静态JSON",
-          registrar: staticData.registrar || "未知",
-          registrationDate: staticData.registrationDate || "未知",
-          expiryDate: staticData.expiryDate || "未知",
-          nameServers: staticData.nameServers || [],
-          registrant: staticData.registrant || "未知",
-          status: staticData.status || "未知",
-          rawData: staticData.rawData || "从静态JSON文件获取的数据",
-          protocol: (staticData.protocol === "rdap" || staticData.protocol === "whois") 
-            ? staticData.protocol 
-            : "whois" as "rdap" | "whois" | "error",
-          message: "从预定义静态数据获取"
-        };
-      }
-    } catch (error) {
-      console.error("静态JSON数据获取失败:", error);
     }
     
     return null;
@@ -389,7 +320,7 @@ export class WhoisApiService {
       nameServers: [],
       registrant: "未知",
       status: "查询失败",
-      rawData: `所有查询方法均失败。\n查询域名: ${this.domain}\n错误: ${errorMessage}\n\n尝试的查询源: ${this.querySources.join(', ')}`,
+      rawData: `域名查询失败: ${this.domain}\n错误: ${errorMessage}\n\n尝试的查询源: ${this.querySources.join(', ')}`,
       protocol: "error" as "rdap" | "whois" | "error",
       message: errorMessage
     };

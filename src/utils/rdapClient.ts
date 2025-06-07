@@ -1,184 +1,224 @@
 
 import axios from 'axios';
 import { WhoisData } from '@/hooks/use-whois-lookup';
-import { getRdapServer } from '@/utils/whoisServers';
-import { formatDomain } from '@/utils/domainUtils';
 
-interface RdapResponse {
+// RDAP服务器列表
+const RDAP_SERVERS: Record<string, string[]> = {
+  'com': [
+    'https://rdap.verisign.com/com/v1',
+    'https://rdap.org'
+  ],
+  'net': [
+    'https://rdap.verisign.com/net/v1',
+    'https://rdap.org'
+  ],
+  'org': ['https://rdap.org'],
+  'info': ['https://rdap.afilias.net/rdap'],
+  'biz': ['https://rdap.nic.biz'],
+  'io': ['https://rdap.nic.io'],
+  'ai': ['https://rdap.nic.ai'],
+  'co': ['https://rdap.nic.co'],
+  'me': ['https://rdap.nic.me'],
+  'tv': ['https://rdap.nic.tv']
+};
+
+// 通用RDAP服务器备选列表
+const FALLBACK_RDAP_SERVERS = [
+  'https://rdap.org',
+  'https://rdap.iana.org'
+];
+
+export interface RDAPResponse {
   success: boolean;
   data?: WhoisData;
-  message: string;
+  message?: string;
 }
 
-// 解析RDAP响应数据
-function parseRdapData(rdapData: any, domain: string): WhoisData {
-  // 提取注册商信息
-  let registrar = "未知";
-  if (rdapData.entities) {
-    for (const entity of rdapData.entities) {
-      if (entity.roles && entity.roles.includes("registrar")) {
-        registrar = entity.vcardArray?.[1]?.find((vcard: any) => vcard[0] === "fn")?.[3] || 
-                   entity.publicIds?.[0]?.identifier || 
-                   entity.handle || 
-                   registrar;
-        break;
-      }
-    }
-  }
-
-  // 提取日期信息
-  let registrationDate = "未知";
-  let expiryDate = "未知";
-  if (rdapData.events) {
-    for (const event of rdapData.events) {
-      if (event.eventAction === "registration") {
-        registrationDate = event.eventDate.split('T')[0];
-      }
-      if (event.eventAction === "expiration") {
-        expiryDate = event.eventDate.split('T')[0];
-      }
-    }
-  }
-
-  // 提取名称服务器
-  const nameServers: string[] = [];
-  if (rdapData.nameservers) {
-    for (const ns of rdapData.nameservers) {
-      if (ns.ldhName) {
-        nameServers.push(ns.ldhName.toLowerCase());
-      }
-    }
-  }
-
-  // 提取状态信息
-  let status = "未知";
-  if (rdapData.status && Array.isArray(rdapData.status)) {
-    status = rdapData.status.join(", ");
-  }
-
-  return {
-    domain: domain,
-    whoisServer: "RDAP",
-    registrar: registrar,
-    registrationDate: registrationDate,
-    expiryDate: expiryDate,
-    nameServers: nameServers,
-    registrant: "未知", // RDAP通常不直接暴露注册人信息
-    status: status,
-    rawData: JSON.stringify(rdapData, null, 2),
-    protocol: "rdap",
-    message: "通过RDAP协议获取的数据"
-  };
-}
-
-// 查询RDAP数据
-export async function queryRDAP(domain: string): Promise<RdapResponse> {
+// 从RDAP数据提取信息
+function parseRDAPData(rdapData: any, domain: string): WhoisData {
   try {
-    const cleanDomain = formatDomain(domain);
-    console.log(`开始RDAP查询: ${cleanDomain}`);
+    console.log('解析RDAP数据:', rdapData);
     
-    // 获取对应的RDAP服务器
-    const rdapServer = getRdapServer(cleanDomain);
-    console.log(`使用RDAP服务器: ${rdapServer}`);
+    const result: WhoisData = {
+      domain: domain,
+      whoisServer: "RDAP查询",
+      registrar: "未知",
+      registrationDate: "未知",
+      expiryDate: "未知",
+      nameServers: [],
+      registrant: "未知",
+      status: "未知",
+      rawData: JSON.stringify(rdapData, null, 2),
+      protocol: "rdap"
+    };
+
+    // 提取注册商信息
+    if (rdapData.entities) {
+      for (const entity of rdapData.entities) {
+        if (entity.roles && entity.roles.includes('registrar')) {
+          if (entity.vcardArray && entity.vcardArray[1]) {
+            for (const vcard of entity.vcardArray[1]) {
+              if (vcard[0] === 'fn') {
+                result.registrar = vcard[3];
+                break;
+              }
+            }
+          }
+          if (result.registrar === "未知" && entity.handle) {
+            result.registrar = entity.handle;
+          }
+          break;
+        }
+      }
+    }
+
+    // 提取日期信息
+    if (rdapData.events) {
+      for (const event of rdapData.events) {
+        if (event.eventAction === 'registration') {
+          result.registrationDate = event.eventDate;
+        } else if (event.eventAction === 'expiration') {
+          result.expiryDate = event.eventDate;
+        }
+      }
+    }
+
+    // 提取DNS服务器
+    if (rdapData.nameservers) {
+      result.nameServers = rdapData.nameservers.map((ns: any) => 
+        ns.ldhName || ns.unicodeName || ns.handle || ''
+      ).filter(Boolean);
+    }
+
+    // 提取状态
+    if (rdapData.status && Array.isArray(rdapData.status)) {
+      result.status = rdapData.status.join(', ');
+    }
+
+    // 提取注册人信息
+    if (rdapData.entities) {
+      for (const entity of rdapData.entities) {
+        if (entity.roles && entity.roles.includes('registrant')) {
+          if (entity.vcardArray && entity.vcardArray[1]) {
+            for (const vcard of entity.vcardArray[1]) {
+              if (vcard[0] === 'fn') {
+                result.registrant = vcard[3];
+                break;
+              }
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    console.log('RDAP解析结果:', result);
+    return result;
+  } catch (error) {
+    console.error('RDAP数据解析错误:', error);
+    return {
+      domain: domain,
+      whoisServer: "RDAP错误",
+      registrar: "未知",
+      registrationDate: "未知",
+      expiryDate: "未知",
+      nameServers: [],
+      registrant: "未知",
+      status: "解析错误",
+      rawData: JSON.stringify(rdapData, null, 2),
+      protocol: "rdap",
+      message: `RDAP数据解析失败: ${error instanceof Error ? error.message : '未知错误'}`
+    };
+  }
+}
+
+// 查询单个RDAP服务器
+async function queryRDAPServer(domain: string, server: string): Promise<RDAPResponse> {
+  try {
+    const url = `${server}${server.endsWith('/') ? '' : '/'}domain/${domain}`;
+    console.log(`查询RDAP服务器: ${url}`);
     
-    // 构建RDAP查询URL
-    const rdapUrl = `${rdapServer}/domain/${cleanDomain}`;
-    
-    // 发送RDAP请求
-    const response = await axios.get(rdapUrl, {
-      timeout: 10000,
+    const response = await axios.get(url, {
+      timeout: 8000,
       headers: {
         'Accept': 'application/rdap+json, application/json',
         'User-Agent': 'Domain-Lookup-Tool/1.0'
       }
     });
 
-    console.log('RDAP响应:', response.data);
-
-    // 检查响应状态
     if (response.status === 200 && response.data) {
-      // 解析RDAP数据
-      const whoisData = parseRdapData(response.data, cleanDomain);
+      const parsedData = parseRDAPData(response.data, domain);
       
-      return {
-        success: true,
-        data: whoisData,
-        message: "RDAP查询成功"
-      };
-    } else {
-      return {
-        success: false,
-        message: "RDAP服务器返回无效响应"
-      };
-    }
-  } catch (error: any) {
-    console.error('RDAP查询失败:', error);
-    
-    // 检查是否是404错误（域名未注册）
-    if (error.response?.status === 404) {
-      return {
-        success: false,
-        message: "域名未注册或不存在"
-      };
+      // 检查数据质量
+      const hasValidData = 
+        parsedData.registrar !== "未知" || 
+        parsedData.registrationDate !== "未知" ||
+        parsedData.nameServers.length > 0;
+
+      if (hasValidData) {
+        return {
+          success: true,
+          data: parsedData,
+          message: `RDAP查询成功 (${server})`
+        };
+      }
     }
     
     return {
       success: false,
-      message: `RDAP查询失败: ${error.message}`
+      message: `RDAP服务器返回了无效数据 (${server})`
+    };
+  } catch (error: any) {
+    console.error(`RDAP服务器查询失败 ${server}:`, error);
+    return {
+      success: false,
+      message: `RDAP查询失败: ${error.message || '网络错误'}`
     };
   }
 }
 
-// 尝试多个RDAP服务器
-export async function queryMultipleRDAP(domain: string): Promise<RdapResponse> {
-  const cleanDomain = formatDomain(domain);
+// 主要的RDAP查询函数
+export async function queryRDAP(domain: string): Promise<RDAPResponse> {
+  console.log(`开始RDAP查询: ${domain}`);
   
-  // 备用RDAP服务器列表
-  const fallbackServers = [
-    'https://rdap.org',
-    'https://rdap.arin.net',
-    'https://rdap.apnic.net'
-  ];
-  
-  // 首先尝试官方服务器
-  try {
-    const primaryResult = await queryRDAP(cleanDomain);
-    if (primaryResult.success) {
-      return primaryResult;
-    }
-  } catch (error) {
-    console.warn('主RDAP服务器查询失败，尝试备用服务器');
+  // 获取顶级域名
+  const tld = domain.split('.').pop()?.toLowerCase();
+  if (!tld) {
+    return {
+      success: false,
+      message: "无法识别域名的顶级域名"
+    };
   }
+
+  // 获取该TLD的RDAP服务器列表
+  const servers = RDAP_SERVERS[tld] || FALLBACK_RDAP_SERVERS;
   
-  // 尝试备用服务器
-  for (const server of fallbackServers) {
-    try {
-      console.log(`尝试备用RDAP服务器: ${server}`);
-      
-      const response = await axios.get(`${server}/domain/${cleanDomain}`, {
-        timeout: 8000,
-        headers: {
-          'Accept': 'application/rdap+json, application/json',
-          'User-Agent': 'Domain-Lookup-Tool/1.0'
-        }
-      });
-      
-      if (response.status === 200 && response.data) {
-        const whoisData = parseRdapData(response.data, cleanDomain);
-        
-        return {
-          success: true,
-          data: whoisData,
-          message: `通过备用RDAP服务器 (${server}) 获取数据`
-        };
+  // 依次尝试每个服务器
+  for (const server of servers) {
+    const result = await queryRDAPServer(domain, server);
+    if (result.success) {
+      return result;
+    }
+  }
+
+  // 如果TLD特定服务器都失败，尝试通用服务器
+  if (RDAP_SERVERS[tld]) {
+    console.log('TLD特定服务器失败，尝试通用RDAP服务器');
+    for (const server of FALLBACK_RDAP_SERVERS) {
+      const result = await queryRDAPServer(domain, server);
+      if (result.success) {
+        return result;
       }
-    } catch (error) {
-      console.warn(`备用RDAP服务器 ${server} 查询失败:`, error);
     }
   }
-  
+
   return {
     success: false,
     message: "所有RDAP服务器查询均失败"
   };
+}
+
+// 查询多个RDAP服务器
+export async function queryMultipleRDAP(domain: string): Promise<RDAPResponse> {
+  return await queryRDAP(domain);
 }
