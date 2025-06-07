@@ -9,7 +9,7 @@ export function useUnifiedDomainQuery() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastDomain, setLastDomain] = useState<string | null>(null);
-  const [lastProtocol, setLastProtocol] = useState<"rdap" | "whois" | "error" | null>(null);
+  const [lastProtocol, setLastProtocol] = useState<"rdap" | "whois" | "error" | "static" | null>(null);
   const { toast } = useToast();
 
   const queryDomain = async (domain: string, protocol: "auto" | "rdap" | "whois" = "auto") => {
