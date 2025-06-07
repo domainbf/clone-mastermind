@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { WhoisSearchForm } from "@/components/whois/WhoisSearchForm";
 import { WhoisErrorAlert } from "@/components/whois/WhoisErrorAlert";
@@ -9,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { LogIn, LogOut, Globe, Search, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useDomainInfo } from "@/hooks/use-domain-info";
+import { useUnifiedDomainQuery } from "@/hooks/use-unified-domain-query";
 
 const Index = () => {
   const {
@@ -20,7 +19,7 @@ const Index = () => {
     lastProtocol,
     queryDomain,
     retryQuery
-  } = useDomainInfo();
+  } = useUnifiedDomainQuery();
 
   const { isAuthenticated, user, logout } = useAuth();
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -195,12 +194,15 @@ const Index = () => {
             <div className="flex justify-between items-center mt-6 mb-2">
               <div className="flex items-center gap-2">
                 <Badge variant={data.protocol === "rdap" ? "default" : "outline"}>
-                  {data.protocol === "rdap" ? "RDAP 协议" : "WHOIS 协议"}
+                  {data.protocol === "rdap" ? "RDAP 协议" : 
+                   data.protocol === "whois" ? "WHOIS 协议" : 
+                   data.protocol === "static" ? "预定义数据" : "未知协议"}
                 </Badge>
                 
                 <div className="text-xs text-gray-500">
                   {data.protocol === "rdap" ? "使用了RDAP协议查询" : 
                    data.protocol === "whois" ? "使用了WHOIS协议查询" : 
+                   data.protocol === "static" ? "使用了预定义数据" :
                    "无法获取数据"}
                 </div>
               </div>
