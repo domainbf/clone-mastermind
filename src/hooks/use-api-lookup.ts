@@ -1,9 +1,10 @@
+
 import { useState } from "react";
 import { WhoisData } from "./use-whois-lookup";
-import axios from 'axios';
 import { useToast } from "@/hooks/use-toast";
 import { getPopularDomainData } from "@/utils/popularDomainsService";
 import { extractErrorDetails, isDomainAvailable, isDomainReserved } from "@/utils/domainUtils";
+import { queryWhoisAPI, queryDomainPrice } from "@/api/whoisClient";
 
 export interface ApiLookupResult {
   domain: string;
@@ -67,23 +68,21 @@ export function useApiLookup() {
         
         if (popularInfo) {
           console.log('找到流行域名信息:', popularInfo);
-          // 合并信息
+          // 合并信息 - 使用正确的属性名
           if (popularInfo.registrar && whoisData.registrar === "未知") {
             whoisData.registrar = popularInfo.registrar;
           }
           
-          if ((popularInfo.created || popularInfo.registrationDate || popularInfo.creationDate) && whoisData.registrationDate === "未知") {
-            whoisData.registrationDate = popularInfo.created || popularInfo.registrationDate || popularInfo.creationDate || "";
+          if (popularInfo.registrationDate && whoisData.registrationDate === "未知") {
+            whoisData.registrationDate = popularInfo.registrationDate;
           }
           
-          if ((popularInfo.expires || popularInfo.expiryDate) && whoisData.expiryDate === "未知") {
-            whoisData.expiryDate = popularInfo.expires || popularInfo.expiryDate;
+          if (popularInfo.expiryDate && whoisData.expiryDate === "未知") {
+            whoisData.expiryDate = popularInfo.expiryDate;
           }
           
-          if ((popularInfo.nameServers || popularInfo.nameservers) && 
-              (popularInfo.nameServers?.length > 0 || popularInfo.nameservers?.length > 0) && 
-              whoisData.nameServers.length === 0) {
-            whoisData.nameServers = popularInfo.nameServers || popularInfo.nameservers || [];
+          if (popularInfo.nameServers && popularInfo.nameServers.length > 0 && whoisData.nameServers.length === 0) {
+            whoisData.nameServers = popularInfo.nameServers;
           }
         }
       }
