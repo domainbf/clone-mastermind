@@ -4,7 +4,7 @@ import { WhoisData } from "./use-whois-lookup";
 import axios from 'axios';
 import { useToast } from "@/hooks/use-toast";
 import { buildApiUrl, getMockWhoisResponse, retryRequest, fetchFromMultipleAPIs, formatDomain } from "@/utils/apiUtils";
-import { getPopularDomainInfo } from "@/utils/popularDomainsService";
+import { getPopularDomainData } from "@/utils/popularDomainsService";
 import { clientFallbackLookup } from "@/utils/clientFallback";
 
 export const useDirectLookup = () => {
@@ -164,7 +164,7 @@ export const useDirectLookup = () => {
         }
         
         // 尝试使用预定义域名数据作为后备
-        const popularDomainInfo = await getPopularDomainInfo(formattedDomain);
+        const popularDomainInfo = getPopularDomainData(formattedDomain);
         if (popularDomainInfo) {
           console.log("直接查询失败，但找到预定义域名数据:", popularDomainInfo);
           setLastStatus({success: true, source: "predefined"});
@@ -179,9 +179,9 @@ export const useDirectLookup = () => {
             domain: formattedDomain,
             whoisServer: "预定义数据库",
             registrar: popularDomainInfo.registrar || "未知",
-            registrationDate: popularDomainInfo.registrationDate || popularDomainInfo.created || "未知",
-            expiryDate: popularDomainInfo.expiryDate || popularDomainInfo.expires || "未知",
-            nameServers: popularDomainInfo.nameServers || popularDomainInfo.nameservers || [],
+            registrationDate: popularDomainInfo.registrationDate || "未知",
+            expiryDate: popularDomainInfo.expiryDate || "未知",
+            nameServers: popularDomainInfo.nameServers || [],
             registrant: "未知",
             status: popularDomainInfo.status || "未知",
             rawData: `Fallback data for ${formattedDomain}. Popular domain information retrieved from predefined database.`,

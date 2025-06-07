@@ -1,9 +1,8 @@
-
 import { useState } from "react";
-import { useToast } from "./use-toast";
+import { WhoisData } from "./use-whois-lookup";
 import axios from 'axios';
-import { queryWhoisAPI, queryDomainPrice } from "@/api/whoisClient";
-import { getPopularDomainInfo } from "@/utils/popularDomainsService";
+import { useToast } from "@/hooks/use-toast";
+import { getPopularDomainData } from "@/utils/popularDomainsService";
 import { extractErrorDetails, isDomainAvailable, isDomainReserved } from "@/utils/domainUtils";
 
 export interface ApiLookupResult {
@@ -64,7 +63,7 @@ export function useApiLookup() {
       // 如果API结果不完整，检查是否为已知的流行域名
       if (!isComplete) {
         console.log('API查询结果不完整，检查是否为已知流行域名');
-        const popularInfo = await getPopularDomainInfo(domain);
+        const popularInfo = await getPopularDomainData(domain);
         
         if (popularInfo) {
           console.log('找到流行域名信息:', popularInfo);

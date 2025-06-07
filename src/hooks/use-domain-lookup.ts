@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { WhoisData } from "@/hooks/use-whois-lookup";
 import { queryRDAP } from "@/utils/rdapClient";
 import { queryWhoisAPI } from "@/api/whoisClient";
-import { getPopularDomainInfo } from "@/utils/popularDomainsService";
+import { getPopularDomainData } from "@/utils/popularDomainsService";
 import { useDirectLookup } from "@/hooks/use-direct-lookup";
 import axios from "axios";
 
@@ -30,7 +30,7 @@ export function useDomainLookup() {
       console.log(`开始查询域名: ${domain}${specificServer ? ` 使用服务器: ${specificServer}` : ''}`);
       
       // Step 1: Check if it's a popular domain first for fastest response
-      const popularDomainInfo = await getPopularDomainInfo(domain);
+      const popularDomainInfo = getPopularDomainData(domain);
       
       if (popularDomainInfo && popularDomainInfo.registrar) {
         console.log("找到预定义域名数据:", popularDomainInfo);
@@ -39,9 +39,9 @@ export function useDomainLookup() {
           domain: domain,
           whoisServer: "预定义数据库",
           registrar: popularDomainInfo.registrar || "未知",
-          registrationDate: popularDomainInfo.registrationDate || popularDomainInfo.created || popularDomainInfo.creationDate || "未知",
-          expiryDate: popularDomainInfo.expiryDate || popularDomainInfo.expires || "未知",
-          nameServers: popularDomainInfo.nameServers || popularDomainInfo.nameservers || [],
+          registrationDate: popularDomainInfo.registrationDate || "未知",
+          expiryDate: popularDomainInfo.expiryDate || "未知",
+          nameServers: popularDomainInfo.nameServers || [],
           registrant: "未知",
           status: popularDomainInfo.status || "未知",
           rawData: `Domain information retrieved from predefined database.`,
@@ -267,15 +267,15 @@ export function useDomainLookup() {
       });
       
       // Try to get at least some data for popular domains
-      const fallbackDomainInfo = await getPopularDomainInfo(domain);
+      const fallbackDomainInfo = getPopularDomainData(domain);
       if (fallbackDomainInfo) {
         const fallbackData: WhoisData = {
           domain: domain,
           whoisServer: "API查询失败",
           registrar: fallbackDomainInfo.registrar || "未知",
-          registrationDate: fallbackDomainInfo.registrationDate || fallbackDomainInfo.created || fallbackDomainInfo.creationDate || "未知",
-          expiryDate: fallbackDomainInfo.expiryDate || fallbackDomainInfo.expires || "未知",
-          nameServers: fallbackDomainInfo.nameServers || fallbackDomainInfo.nameservers || [],
+          registrationDate: fallbackDomainInfo.registrationDate || "未知",
+          expiryDate: fallbackDomainInfo.expiryDate || "未知",
+          nameServers: fallbackDomainInfo.nameServers || [],
           registrant: "未知",
           status: fallbackDomainInfo.status || "未知",
           rawData: `Error querying for ${domain}: ${error.message}\n\n部分数据来自预定义数据库`,
