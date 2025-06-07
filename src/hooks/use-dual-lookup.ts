@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { WhoisData } from "./use-whois-lookup";
@@ -6,7 +5,7 @@ import { queryRDAP } from "@/utils/rdapClient";
 import { extractTLD } from "@/utils/apiUtils";
 import { getWhoisServer } from "@/utils/domainUtils";
 import { directWhoisQuery, localWhoisQuery } from "@/utils/whoisQueries";
-import { getWhoisServer as getLocalWhoisServer, loadWhoisServers } from "@/utils/whoisServers";
+import { getWhoisServer as getLocalWhoisServer, WHOIS_SERVERS } from "@/utils/whoisServers";
 import { useQueryStats } from "@/utils/lookupStats";
 import { queryDomain } from "@/api/domainApiClient";
 
@@ -23,18 +22,13 @@ export function useDualLookup() {
   // 查询统计数据
   const { queryStats, updateStats, getQueryStats } = useQueryStats();
   
-  // 加载常用WHOIS服务器列表
-  const [whoisServers, setWhoisServers] = useState<Record<string, string>>({});
+  // 使用常用WHOIS服务器列表
+  const [whoisServers, setWhoisServers] = useState<Record<string, string>>(WHOIS_SERVERS);
   
   useEffect(() => {
-    // 尝试从本地JSON文件加载WHOIS服务器列表
-    const initWhoisServers = async () => {
-      const servers = await loadWhoisServers();
-      setWhoisServers(servers);
-      console.log("已加载WHOIS服务器列表", Object.keys(servers).length);
-    };
-    
-    initWhoisServers();
+    // 初始化WHOIS服务器列表
+    setWhoisServers(WHOIS_SERVERS);
+    console.log("已加载WHOIS服务器列表", Object.keys(WHOIS_SERVERS).length);
   }, []);
 
   // 改进的双协议查询函数
