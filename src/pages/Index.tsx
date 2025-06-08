@@ -9,7 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { LogIn, LogOut, Globe, Search, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useLocalDomainQuery } from "@/hooks/use-local-domain-query";
+import { useDomainLookup } from "@/hooks/use-domain-lookup";
 
 const Index = () => {
   const {
@@ -18,9 +18,9 @@ const Index = () => {
     data,
     lastDomain,
     protocol,
-    query,
+    queryDomain,
     retryQuery
-  } = useLocalDomainQuery();
+  } = useDomainLookup();
 
   const { isAuthenticated, user, logout } = useAuth();
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -41,11 +41,11 @@ const Index = () => {
   // 处理搜索并跟踪最近的搜索
   const handleSearch = async (domain: string) => {
     try {
-      await query(domain);
+      await queryDomain(domain);
       
       // 如果不在最近搜索中，添加它
       if (!recentSearches.includes(domain)) {
-        const newSearches = [domain, ...recentSearches].slice(0, 5); // 保留最近5次搜索
+        const newSearches = [domain, ...recentSearches].slice(0, 5);
         setRecentSearches(newSearches);
         
         // 保存到localStorage
@@ -74,7 +74,7 @@ const Index = () => {
               域名查询工具
             </h1>
             <p className="text-md text-gray-600">
-              输入要查询的域名，获取详细信息 (本地RDAP + WHOIS)
+              直接连接RDAP和WHOIS服务器查询域名信息
             </p>
           </div>
           <div className="flex gap-2">
@@ -162,14 +162,11 @@ const Index = () => {
             <div className="flex justify-between items-center mt-6 mb-2">
               <div className="flex items-center gap-2">
                 <Badge variant={protocol === "rdap" ? "default" : "outline"}>
-                  {protocol === "rdap" ? "RDAP 协议" : 
-                   protocol === "whois" ? "WHOIS 协议" : "查询失败"}
+                  {protocol === "rdap" ? "RDAP 协议" : "WHOIS 协议"}
                 </Badge>
                 
                 <div className="text-xs text-gray-500">
-                  {protocol === "rdap" ? "使用了RDAP协议查询" : 
-                   protocol === "whois" ? "使用了WHOIS协议查询" : 
-                   "查询失败"}
+                  {protocol === "rdap" ? "使用了RDAP协议查询" : "使用了WHOIS协议查询"}
                 </div>
               </div>
               
