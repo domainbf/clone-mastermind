@@ -10,44 +10,22 @@ import {
   TooltipProvider, 
   TooltipTrigger 
 } from "@/components/ui/tooltip";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, ExternalLink } from "lucide-react";
-import { Link } from "react-router-dom";
+import { AlertCircle } from "lucide-react";
 
 interface WhoisSearchFormProps {
-  onSearch: (domain: string, protocol?: "auto" | "rdap" | "whois") => Promise<void>;
+  onSearch: (domain: string) => Promise<void>;
   loading: boolean;
-  defaultProtocol?: "auto" | "rdap" | "whois";
-  onProtocolChange?: (protocol: "auto" | "rdap" | "whois") => void;
   error?: string | null;
 }
-
-// 公共WHOIS服务列表
-const PUBLIC_WHOIS_SERVICES = [
-  { name: "ICANN Lookup", url: "https://lookup.icann.org/en/lookup" },
-  { name: "who.is", url: "https://who.is/" },
-  { name: "whois.com", url: "https://www.whois.com/whois/" },
-  { name: "DomainTools", url: "https://whois.domaintools.com/" }
-];
 
 export const WhoisSearchForm = ({ 
   onSearch, 
   loading,
-  defaultProtocol = "auto",
-  onProtocolChange,
   error
 }: WhoisSearchFormProps) => {
   const [domain, setDomain] = useState("");
-  const [protocol, setProtocol] = useState<"auto" | "rdap" | "whois">(defaultProtocol);
   const { toast } = useToast();
-  const [showPublicServices, setShowPublicServices] = useState(false);
 
   // 改进的域名清理和验证函数
   const cleanDomain = (inputDomain: string) => {
@@ -111,27 +89,15 @@ export const WhoisSearchForm = ({
       return;
     }
     
-    const protocolMessage = 
-      protocol === "rdap" ? "正在使用RDAP协议查询..." : 
-      protocol === "whois" ? "正在使用WHOIS协议查询..." :
-      "正在查询域名信息，将优先使用RDAP协议...";
-    
     toast({
       title: "查询中",
-      description: `正在查询域名 ${cleanedDomain} 的信息，${protocolMessage}`,
+      description: `正在查询域名 ${cleanedDomain} 的信息，优先使用RDAP协议...`,
     });
     
-    // 重置公共服务显示状态
-    setShowPublicServices(false);
-    
     try {
-      // Make sure we properly await the onSearch promise
-      await onSearch(cleanedDomain, protocol);
+      await onSearch(cleanedDomain);
     } catch (error) {
       console.error("域名查询失败:", error);
-      // 显示公共服务建议
-      setShowPublicServices(true);
-      
       toast({
         title: "查询失败",
         description: "域名查询过程中出现错误，请稍后重试",
@@ -143,13 +109,6 @@ export const WhoisSearchForm = ({
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       void handleSubmit();
-    }
-  };
-  
-  const handleProtocolChange = (value: "auto" | "rdap" | "whois") => {
-    setProtocol(value);
-    if (onProtocolChange) {
-      onProtocolChange(value);
     }
   };
 
@@ -166,20 +125,6 @@ export const WhoisSearchForm = ({
             onKeyPress={handleKeyPress}
           />
           
-          <Select 
-            value={protocol}
-            onValueChange={(value: any) => handleProtocolChange(value)}
-          >
-            <SelectTrigger className="w-full md:w-[180px]">
-              <SelectValue placeholder="查询协议" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">自动选择协议</SelectItem>
-              <SelectItem value="rdap">RDAP协议</SelectItem>
-              <SelectItem value="whois">WHOIS协议</SelectItem>
-            </SelectContent>
-          </Select>
-          
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -192,11 +137,7 @@ export const WhoisSearchForm = ({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>
-                  {protocol === "auto" && "优先使用RDAP协议查询域名信息"}
-                  {protocol === "rdap" && "使用RDAP协议查询域名信息"}
-                  {protocol === "whois" && "使用WHOIS协议查询域名信息"}
-                </p>
+                <p>优先使用RDAP协议查询域名信息，失败时自动切换到WHOIS</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -211,37 +152,10 @@ export const WhoisSearchForm = ({
           </Alert>
         )}
         
-        {/* 查询失败时显示公共WHOIS服务推荐 */}
-        {showPublicServices && (
-          <Alert className="bg-blue-50 border-blue-200 mt-4">
-            <AlertTitle className="text-blue-800">尝试使用公共WHOIS服务</AlertTitle>
-            <AlertDescription>
-              <p className="mb-2">当前查询遇到问题，您可以尝试以下公共WHOIS服务：</p>
-              <div className="flex flex-wrap gap-2">
-                {PUBLIC_WHOIS_SERVICES.map((service) => (
-                  <a 
-                    key={service.name}
-                    href={`${service.url}${domain}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-900 underline"
-                  >
-                    {service.name} <ExternalLink size={14} />
-                  </a>
-                ))}
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
-        
         <div className="text-sm text-gray-500">
-          <p>支持查询全球常见顶级域名: .com, .net, .org, .cn, .io 等</p>
+          <p>支持查询全球常见顶级域名: .com, .net, .org, .io, .ai 等</p>
           <p className="mt-1">输入格式: example.com（无需添加http://或www.）</p>
-          <p className="mt-1">
-            {protocol === "auto" && "自动选择协议: 优先使用RDAP，失败后自动切换到WHOIS"}
-            {protocol === "rdap" && "RDAP协议: 更现代的域名查询协议，提供结构化数据"}
-            {protocol === "whois" && "WHOIS协议: 传统域名查询协议，覆盖范围更广"}
-          </p>
+          <p className="mt-1">系统会自动选择最优查询协议：优先RDAP，失败后切换到WHOIS</p>
         </div>
       </div>
     </Card>

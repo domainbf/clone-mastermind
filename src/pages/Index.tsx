@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { WhoisSearchForm } from "@/components/whois/WhoisSearchForm";
 import { WhoisErrorAlert } from "@/components/whois/WhoisErrorAlert";
@@ -8,7 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { LogIn, LogOut, Globe, Search, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useUnifiedDomainQuery } from "@/hooks/use-unified-domain-query";
+import { useLocalDomainQuery } from "@/hooks/use-local-domain-query";
 
 const Index = () => {
   const {
@@ -16,14 +17,13 @@ const Index = () => {
     error,
     data,
     lastDomain,
-    lastProtocol,
-    queryDomain,
+    protocol,
+    query,
     retryQuery
-  } = useUnifiedDomainQuery();
+  } = useLocalDomainQuery();
 
   const { isAuthenticated, user, logout } = useAuth();
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [preferredProtocol, setPreferredProtocol] = useState<"auto" | "rdap" | "whois">("auto");
   const { toast } = useToast();
   
   // 从localStorage加载最近查询
@@ -36,22 +36,12 @@ const Index = () => {
     } catch (e) {
       console.error("Failed to load recent searches:", e);
     }
-    
-    // 尝试加载协议偏好
-    try {
-      const savedProtocol = localStorage.getItem('preferredProtocol');
-      if (savedProtocol && ['auto', 'rdap', 'whois'].includes(savedProtocol)) {
-        setPreferredProtocol(savedProtocol as "auto" | "rdap" | "whois");
-      }
-    } catch (e) {
-      console.error("Failed to load protocol preference:", e);
-    }
   }, []);
 
   // 处理搜索并跟踪最近的搜索
-  const handleSearch = async (domain: string, protocol: "auto" | "rdap" | "whois" = preferredProtocol) => {
+  const handleSearch = async (domain: string) => {
     try {
-      await queryDomain(domain, protocol);
+      await query(domain);
       
       // 如果不在最近搜索中，添加它
       if (!recentSearches.includes(domain)) {
@@ -74,26 +64,6 @@ const Index = () => {
       });
     }
   };
-  
-  // 处理协议变更
-  const handleProtocolChange = (protocol: "auto" | "rdap" | "whois") => {
-    setPreferredProtocol(protocol);
-    
-    // 保存到localStorage
-    try {
-      localStorage.setItem('preferredProtocol', protocol);
-    } catch (e) {
-      console.error("Failed to save protocol preference:", e);
-    }
-    
-    // 显示提示
-    toast({
-      title: "已更改默认查询协议",
-      description: protocol === "auto" ? "将优先使用RDAP，失败后自动切换到WHOIS" :
-                   protocol === "rdap" ? "将仅使用RDAP协议查询" :
-                   "将仅使用WHOIS协议查询",
-    });
-  };
 
   return (
     <div className="min-h-screen bg-white py-8 px-4 sm:px-6 lg:px-8">
@@ -104,7 +74,7 @@ const Index = () => {
               域名查询工具
             </h1>
             <p className="text-md text-gray-600">
-              输入要查询的域名，获取详细信息 (RDAP + WHOIS)
+              输入要查询的域名，获取详细信息 (本地RDAP + WHOIS)
             </p>
           </div>
           <div className="flex gap-2">
@@ -140,8 +110,6 @@ const Index = () => {
         <WhoisSearchForm 
           onSearch={handleSearch}
           loading={loading}
-          defaultProtocol={preferredProtocol}
-          onProtocolChange={handleProtocolChange}
           error={error}
         />
 
@@ -193,17 +161,15 @@ const Index = () => {
           <>
             <div className="flex justify-between items-center mt-6 mb-2">
               <div className="flex items-center gap-2">
-                <Badge variant={data.protocol === "rdap" ? "default" : "outline"}>
-                  {data.protocol === "rdap" ? "RDAP 协议" : 
-                   data.protocol === "whois" ? "WHOIS 协议" : 
-                   data.protocol === "static" ? "预定义数据" : "未知协议"}
+                <Badge variant={protocol === "rdap" ? "default" : "outline"}>
+                  {protocol === "rdap" ? "RDAP 协议" : 
+                   protocol === "whois" ? "WHOIS 协议" : "查询失败"}
                 </Badge>
                 
                 <div className="text-xs text-gray-500">
-                  {data.protocol === "rdap" ? "使用了RDAP协议查询" : 
-                   data.protocol === "whois" ? "使用了WHOIS协议查询" : 
-                   data.protocol === "static" ? "使用了预定义数据" :
-                   "无法获取数据"}
+                  {protocol === "rdap" ? "使用了RDAP协议查询" : 
+                   protocol === "whois" ? "使用了WHOIS协议查询" : 
+                   "查询失败"}
                 </div>
               </div>
               
