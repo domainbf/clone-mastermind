@@ -79,6 +79,7 @@ export const WhoisSearchForm = ({
     }
     
     try {
+      console.log(`提交域名查询: ${cleanedDomain}`);
       await onSearch(cleanedDomain);
     } catch (error) {
       console.error("域名查询失败:", error);
@@ -107,6 +108,7 @@ export const WhoisSearchForm = ({
             onChange={(e) => setDomain(e.target.value)}
             className="flex-1"
             onKeyPress={handleKeyPress}
+            disabled={loading}
           />
           
           <TooltipProvider>
@@ -137,7 +139,7 @@ export const WhoisSearchForm = ({
         )}
         
         <div className="text-sm text-gray-500">
-          <p>支持查询全球常见顶级域名: .com, .net, .org, .io, .ai 等</p>
+          <p>支持查询全球常见顶级域名: .com, .net, .org, .io, .ai, .cn 等</p>
           <p className="mt-1">输入格式: example.com（无需添加http://或www.）</p>
           <p className="mt-1">系统直接连接RDAP和WHOIS服务器：优先RDAP，失败后使用WHOIS</p>
         </div>

@@ -23,8 +23,13 @@ export class DomainLookupService {
       const response = await axios.post(`${this.baseUrl}/api/whois`, {
         domain: domain.toLowerCase().trim()
       }, {
-        timeout: 15000
+        timeout: 30000,
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
+
+      console.log('API响应:', response.data);
 
       if (response.data.success) {
         return {
@@ -40,9 +45,19 @@ export class DomainLookupService {
       }
     } catch (error: any) {
       console.error('域名查询错误:', error);
+      
+      let errorMessage = '查询失败';
+      if (error.response) {
+        errorMessage = `服务器错误: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = '网络连接失败，请检查网络连接';
+      } else {
+        errorMessage = error.message || '未知错误';
+      }
+      
       return {
         success: false,
-        error: `查询失败: ${error.message || '网络错误'}`
+        error: errorMessage
       };
     }
   }

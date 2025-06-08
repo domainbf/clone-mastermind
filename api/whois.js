@@ -15,7 +15,8 @@ const WHOIS_SERVERS = {
   'me': 'whois.nic.me',
   'tv': 'whois.nic.tv',
   'cc': 'whois.nic.cc',
-  'ly': 'whois.nic.ly'
+  'ly': 'whois.nic.ly',
+  'cn': 'whois.cnnic.cn'
 };
 
 // RDAP服务器映射
@@ -29,7 +30,8 @@ const RDAP_SERVERS = {
   'ai': 'https://rdap.nic.ai',
   'co': 'https://rdap.nic.co',
   'me': 'https://rdap.nic.me',
-  'tv': 'https://rdap.nic.tv'
+  'tv': 'https://rdap.nic.tv',
+  'cn': 'https://rdap.cnnic.cn'
 };
 
 function extractTLD(domain) {
@@ -39,10 +41,17 @@ function extractTLD(domain) {
 // 直接TCP WHOIS查询
 function directWhoisQuery(domain, server) {
   return new Promise((resolve, reject) => {
+    console.log(`连接WHOIS服务器: ${server}:43`);
     const socket = new net.Socket();
     let data = '';
     
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error('WHOIS查询超时'));
+    }, 15000);
+    
     socket.connect(43, server, () => {
+      console.log(`已连接到 ${server}，发送查询: ${domain}`);
       socket.write(domain + '\r\n');
     });
     
@@ -51,20 +60,19 @@ function directWhoisQuery(domain, server) {
     });
     
     socket.on('close', () => {
+      clearTimeout(timeout);
+      console.log(`从 ${server} 收到 ${data.length} 字节数据`);
       if (data.length > 50) {
         resolve(data);
       } else {
-        reject(new Error('No data received'));
+        reject(new Error('WHOIS服务器返回数据不足'));
       }
     });
     
     socket.on('error', (err) => {
+      clearTimeout(timeout);
+      console.error(`WHOIS连接错误 ${server}:`, err.message);
       reject(err);
-    });
-    
-    socket.setTimeout(10000, () => {
-      socket.destroy();
-      reject(new Error('Timeout'));
     });
   });
 }
@@ -72,16 +80,23 @@ function directWhoisQuery(domain, server) {
 // RDAP查询
 async function rdapQuery(domain, server) {
   const url = `${server}/domain/${domain}`;
+  console.log(`RDAP查询: ${url}`);
   
-  const response = await axios.get(url, {
-    timeout: 10000,
-    headers: {
-      'Accept': 'application/rdap+json',
-      'User-Agent': 'Domain-Lookup/1.0'
-    }
-  });
-  
-  return response.data;
+  try {
+    const response = await axios.get(url, {
+      timeout: 10000,
+      headers: {
+        'Accept': 'application/rdap+json',
+        'User-Agent': 'Domain-Lookup/1.0'
+      }
+    });
+    
+    console.log(`RDAP响应状态: ${response.status}`);
+    return response.data;
+  } catch (error) {
+    console.error(`RDAP查询失败 ${url}:`, error.message);
+    throw error;
+  }
 }
 
 // 解析WHOIS文本数据
@@ -89,28 +104,28 @@ function parseWhoisData(text, domain) {
   const lines = text.split('\n');
   const result = {
     domain: domain,
-    whoisServer: null,
-    registrar: null,
-    registrationDate: null,
-    expiryDate: null,
+    whoisServer: '未知',
+    registrar: '未知',
+    registrationDate: '未知',
+    expiryDate: '未知',
     nameServers: [],
-    registrant: null,
-    status: null,
+    registrant: '未知',
+    status: '未知',
     rawData: text
   };
   
   for (const line of lines) {
     const lowerLine = line.toLowerCase().trim();
     
-    if (lowerLine.includes('registrar:')) {
+    if (lowerLine.includes('registrar:') && result.registrar === '未知') {
       result.registrar = line.split(':').slice(1).join(':').trim();
     }
     
-    if (lowerLine.includes('creation date:') || lowerLine.includes('registered on:')) {
+    if ((lowerLine.includes('creation date:') || lowerLine.includes('registered on:')) && result.registrationDate === '未知') {
       result.registrationDate = line.split(':').slice(1).join(':').trim();
     }
     
-    if (lowerLine.includes('expiry date:') || lowerLine.includes('expires on:')) {
+    if ((lowerLine.includes('expiry date:') || lowerLine.includes('expires on:')) && result.expiryDate === '未知') {
       result.expiryDate = line.split(':').slice(1).join(':').trim();
     }
     
@@ -121,11 +136,11 @@ function parseWhoisData(text, domain) {
       }
     }
     
-    if (lowerLine.includes('registrant:') || lowerLine.includes('registrant organization:')) {
+    if (lowerLine.includes('registrant:') && result.registrant === '未知') {
       result.registrant = line.split(':').slice(1).join(':').trim();
     }
     
-    if (lowerLine.includes('domain status:')) {
+    if (lowerLine.includes('domain status:') && result.status === '未知') {
       result.status = line.split(':').slice(1).join(':').trim();
     }
   }
@@ -189,6 +204,7 @@ function parseRdapData(data, domain) {
 }
 
 module.exports = async (req, res) => {
+  // 设置CORS头
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -207,16 +223,19 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Domain required' });
   }
   
+  console.log(`开始查询域名: ${domain}`);
   const tld = extractTLD(domain);
+  console.log(`提取的TLD: ${tld}`);
   
   // 优先尝试RDAP
   const rdapServer = RDAP_SERVERS[tld];
   if (rdapServer) {
     try {
-      console.log(`尝试RDAP查询: ${domain}`);
+      console.log(`尝试RDAP查询: ${domain} 使用服务器: ${rdapServer}`);
       const rdapData = await rdapQuery(domain, rdapServer);
       const parsed = parseRdapData(rdapData, domain);
       
+      console.log('RDAP查询成功');
       return res.json({
         success: true,
         protocol: 'rdap',
@@ -225,16 +244,19 @@ module.exports = async (req, res) => {
     } catch (rdapError) {
       console.log(`RDAP失败: ${rdapError.message}`);
     }
+  } else {
+    console.log(`没有找到TLD ${tld} 的RDAP服务器`);
   }
   
   // RDAP失败，尝试WHOIS
   const whoisServer = WHOIS_SERVERS[tld];
   if (whoisServer) {
     try {
-      console.log(`尝试WHOIS查询: ${domain}`);
+      console.log(`尝试WHOIS查询: ${domain} 使用服务器: ${whoisServer}`);
       const whoisData = await directWhoisQuery(domain, whoisServer);
       const parsed = parseWhoisData(whoisData, domain);
       
+      console.log('WHOIS查询成功');
       return res.json({
         success: true,
         protocol: 'whois',
@@ -242,7 +264,13 @@ module.exports = async (req, res) => {
       });
     } catch (whoisError) {
       console.log(`WHOIS失败: ${whoisError.message}`);
+      return res.json({
+        success: false,
+        error: `WHOIS查询失败: ${whoisError.message}`
+      });
     }
+  } else {
+    console.log(`没有找到TLD ${tld} 的WHOIS服务器`);
   }
   
   return res.json({
